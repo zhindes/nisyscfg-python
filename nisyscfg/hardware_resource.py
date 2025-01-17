@@ -103,6 +103,7 @@ class HardwareResource(object):
             setter=self._set_property,
             getter=self._get_property,
             indexed_getter=self._get_indexed_property,
+            indexed_setter=self._set_indexed_property,
         )
 
     def __del__(self):
@@ -215,8 +216,14 @@ class HardwareResource(object):
         else:
             value = c_type(value)
 
-        error_code = self._library.SetResourceProperty(self._handle, id, value)
+        # error_code = self._library.SetResourceProperty(self._handle, id, value)
+        error_code = self._library.SetResourcePropertyWithType(self._handle, id, nisyscfg_type, value)
         nisyscfg.errors.handle_error(self, error_code)
+
+
+    def _set_indexed_property(self, id, index, value, c_type, nisyscfg_type):
+        # todo: bounds checking and an explanation
+        self._set_property(id + index, value, c_type, nisyscfg_type)
 
     def rename(self, new_name, overwrite_conflict=False, update_dependencies=False):
         """

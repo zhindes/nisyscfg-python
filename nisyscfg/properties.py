@@ -27,12 +27,13 @@ from typing import List, Union
 
 
 class PropertyAccessor(object):
-    __slots__ = "_getter", "_setter", "_indexed_getter"
+    __slots__ = "_getter", "_setter", "_indexed_getter", "_indexed_setter"
 
-    def __init__(self, setter=None, getter=None, indexed_getter=None):
+    def __init__(self, setter=None, getter=None, indexed_getter=None, indexed_setter=None):
         self._setter = setter
         self._getter = getter
         self._indexed_getter = indexed_getter
+        self._indexed_setter = indexed_setter
 
     def set_bool_property(self, id, value):
         self._setter(id, value, Bool, PropertyType.BOOL)
@@ -69,6 +70,24 @@ class PropertyAccessor(object):
 
     def get_timestamp_property(self, id):
         return self._getter(id, nisyscfg.types.TimestampUTC)
+
+    def set_indexed_bool_property(self, id, index, value):
+        self._indexed_setter(id, index, value, Bool, PropertyType.BOOL)
+
+    def set_indexed_int_property(self, id, index, value):
+        self._indexed_setter(id, index, value, ctypes.c_int, PropertyType.INT)
+
+    def set_indexed_unsigned_int_property(self, id, index, value):
+        self._indexed_setter(id, index, value, ctypes.c_uint, PropertyType.UNSIGNED_INT)
+
+    def set_indexed_double_property(self, id, index, value):
+        self._indexed_setter(id, index, value, ctypes.c_double, PropertyType.DOUBLE)
+
+    def set_indexed_string_property(self, id, index, value):
+        self._indexed_setter(id, index, value, ctypes.c_char_p, PropertyType.STRING)
+
+    def set_indexed_timestamp_property(self, id, index, value):
+        self._indexed_setter(id, index, value, nisyscfg.types.TimestampUTC, PropertyType.TIMESTAMP)
 
     def get_indexed_bool_property(self, id, index):
         return self._indexed_getter(id, index, Bool)
@@ -188,6 +207,21 @@ class IndexedPropertyItems(object):
                 raise IndexError(index)
             raise
 
+    def __setitem__(self, index, value):
+        try:
+            index + 1
+        except TypeError:
+            raise TypeError(index)
+        # The index is stored as a 12-bit number in the driver.
+        if index < 0 and index >= 4096:
+            raise IndexError(index)
+        try:
+            self._tag.set_index(self._accessor, index, value)
+        except nisyscfg.errors.LibraryError as err:
+            if err.code == nisyscfg.errors.Status.PROP_DOES_NOT_EXIST:
+                raise IndexError(index)
+            raise
+
     def __len__(self):
         if not hasattr(self, "_len"):
             try:
@@ -240,6 +274,12 @@ class IndexedProperty(TypeProperty):
     def get(self, accessor: PropertyAccessor):
         return IndexedPropertyItems(accessor, self)
 
+    def set(self, accessor: PropertyAccessor, values):
+        # todo what if scalar?
+        items = IndexedPropertyItems(accessor, self)
+        for index, val in enumerate(values):
+            items[index] = val
+
 
 class IndexedBoolProperty(IndexedProperty):
     __slots__ = ()
@@ -249,6 +289,9 @@ class IndexedBoolProperty(IndexedProperty):
         if self._enum:
             return self._enum(value)
         return value
+
+    def set_index(self, accessor: PropertyAccessor, index: int, value: bool):
+        accessor.set_indexed_bool_property(self._id, index, value)
 
 
 class IndexedIntProperty(IndexedProperty):
@@ -260,6 +303,9 @@ class IndexedIntProperty(IndexedProperty):
             return self._enum(value)
         return value
 
+    def set_index(self, accessor: PropertyAccessor, index: int, value: int):
+        accessor.set_indexed_int_property(self._id, index, value)
+
 
 class IndexedUnsignedIntProperty(IndexedProperty):
     __slots__ = ()
@@ -270,12 +316,18 @@ class IndexedUnsignedIntProperty(IndexedProperty):
             return self._enum(value)
         return value
 
+    def set_index(self, accessor: PropertyAccessor, index: int, value: int):
+        accessor.set_indexed_unsigned_int_property(self._id, index, value)
+
 
 class IndexedDoubleProperty(IndexedProperty):
     __slots__ = ()
 
     def get_index(self, accessor: PropertyAccessor, index: int):
         return accessor.get_indexed_double_property(self._id, index)
+
+    def set_index(self, accessor: PropertyAccessor, index: int, value: float):
+        accessor.set_indexed_double_property(self._id, index, value)
 
 
 class IndexedStringProperty(IndexedProperty):
@@ -284,12 +336,18 @@ class IndexedStringProperty(IndexedProperty):
     def get_index(self, accessor: PropertyAccessor, index: int):
         return accessor.get_indexed_string_property(self._id, index)
 
+    def set_index(self, accessor: PropertyAccessor, index: int, value: str):
+        accessor.set_indexed_string_property(self._id, index, value)
+
 
 class IndexedTimestampProperty(IndexedProperty):
     __slots__ = ()
 
     def get_index(self, accessor: PropertyAccessor, index: int):
         return accessor.get_indexed_timestamp_property(self._id, index)
+
+    def set_index(self, accessor: PropertyAccessor, index: int, value):
+        accessor.set_indexed_timestamp_property(self._id, index, value)
 
 
 class PropertyGroup(object):
